@@ -2,7 +2,7 @@
 
 ### Powered by SecureAuthenticationX
 
-> An enterprise-grade cybersecurity platform featuring secure authentication, role-based access control, real-time security monitoring, SOC analyst dashboard, and AI-driven threat detection — built as a Final Year Cybersecurity Project.
+> An enterprise-grade cybersecurity platform featuring secure authentication, role-based access control, real-time security monitoring, SOC analyst dashboard, and AI-driven threat detection 
 
 <div align="center">
 
