@@ -1,85 +1,122 @@
-import React, { useState } from 'react';
-import { AlertTriangle, ShieldAlert, Info, CheckCircle, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle,
+  Info,
+  ShieldAlert,
+  X,
+} from 'lucide-react';
 
-/**
- * AlertBanner
- * Props:
- *   type    — 'warning' | 'danger' | 'info' | 'success'
- *   title   — bold heading text
- *   message — body text
- *   onDismiss — optional callback; if provided a close button is shown
- */
-export default function AlertBanner({ type = 'warning', title, message, onDismiss }) {
-  const [visible, setVisible] = useState(true);
+const ALERT_VARIANTS = {
+  warning: {
+    icon: AlertTriangle,
+    containerClass: 'border-cyber-yellow/40 bg-cyber-yellow/5',
+    iconClass: 'text-cyber-yellow',
+    titleClass: 'text-cyber-yellow',
+    indicatorClass: 'bg-cyber-yellow',
+  },
+  danger: {
+    icon: ShieldAlert,
+    containerClass: 'border-cyber-red/40 bg-cyber-red/5',
+    iconClass: 'text-cyber-red',
+    titleClass: 'text-cyber-red',
+    indicatorClass: 'bg-cyber-red',
+  },
+  info: {
+    icon: Info,
+    containerClass: 'border-cyber-blue/40 bg-cyber-blue/5',
+    iconClass: 'text-cyber-blue',
+    titleClass: 'text-cyber-blue',
+    indicatorClass: 'bg-cyber-blue',
+  },
+  success: {
+    icon: CheckCircle,
+    containerClass: 'border-cyber-green/40 bg-cyber-green/5',
+    iconClass: 'text-cyber-green',
+    titleClass: 'text-cyber-green',
+    indicatorClass: 'bg-cyber-green',
+  },
+};
 
-  if (!visible) return null;
+ALERT_VARIANTS.error = ALERT_VARIANTS.danger;
 
-  const config = {
-    warning: {
-      icon:        <AlertTriangle size={18} />,
-      containerCls: 'border-cyber-yellow/40 bg-cyber-yellow/5',
-      iconCls:     'text-cyber-yellow',
-      titleCls:    'text-cyber-yellow',
-      dot:         'bg-cyber-yellow',
-    },
-    danger: {
-      icon:        <ShieldAlert size={18} />,
-      containerCls: 'border-cyber-red/40 bg-cyber-red/5',
-      iconCls:     'text-cyber-red',
-      titleCls:    'text-cyber-red',
-      dot:         'bg-cyber-red',
-    },
-    info: {
-      icon:        <Info size={18} />,
-      containerCls: 'border-cyber-blue/40 bg-cyber-blue/5',
-      iconCls:     'text-cyber-blue',
-      titleCls:    'text-cyber-blue',
-      dot:         'bg-cyber-blue',
-    },
-    success: {
-      icon:        <CheckCircle size={18} />,
-      containerCls: 'border-cyber-green/40 bg-cyber-green/5',
-      iconCls:     'text-cyber-green',
-      titleCls:    'text-cyber-green',
-      dot:         'bg-cyber-green',
-    },
-  }[type];
+export default function AlertBanner({
+  type = 'warning',
+  title,
+  message,
+  onDismiss,
+  autoDismiss = false,
+  autoDismissMs = 5000,
+}) {
+  const [isVisible, setIsVisible] = useState(true);
 
-  const handleDismiss = () => {
-    setVisible(false);
+  useEffect(() => {
+    setIsVisible(true);
+  }, [title, message]);
+
+  useEffect(() => {
+    if (!autoDismiss || !isVisible) return;
+
+    const timer = setTimeout(() => {
+      setIsVisible(false);
+      onDismiss?.();
+    }, autoDismissMs);
+
+    return () => clearTimeout(timer);
+  }, [autoDismiss, autoDismissMs, isVisible, onDismiss]);
+
+  if (!isVisible || (!title && !message)) {
+    return null;
+  }
+
+  const variant = ALERT_VARIANTS[type] ?? ALERT_VARIANTS.warning;
+  const Icon = variant.icon;
+
+  const dismissBanner = () => {
+    setIsVisible(false);
     onDismiss?.();
   };
 
   return (
     <div
-      className={`relative flex items-start gap-3 rounded-lg border px-4 py-3 animate-fade-in ${config.containerCls}`}
       role="alert"
+      className={`relative flex items-start gap-3 rounded-lg border px-4 py-3 animate-fade-in ${variant.containerClass}`}
     >
-      {/* Pulsing dot */}
-      <span className="mt-0.5 flex-shrink-0 relative">
-        <span className={`absolute inline-flex h-2 w-2 rounded-full ${config.dot} animate-ping opacity-75`} />
-        <span className={`relative inline-flex h-2 w-2 rounded-full ${config.dot}`} />
+      <span className="relative mt-0.5 flex-shrink-0">
+        <span
+          className={`absolute inline-flex h-2 w-2 rounded-full opacity-75 animate-ping ${variant.indicatorClass}`}
+        />
+        <span
+          className={`relative inline-flex h-2 w-2 rounded-full ${variant.indicatorClass}`}
+        />
       </span>
 
-      {/* Icon */}
-      <span className={`flex-shrink-0 mt-0.5 ${config.iconCls}`}>{config.icon}</span>
+      <span className={`mt-0.5 flex-shrink-0 ${variant.iconClass}`}>
+        <Icon size={18} />
+      </span>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        {title   && <p className={`text-sm font-semibold ${config.titleCls}`}>{title}</p>}
-        {message && <p className="text-cyber-text text-sm mt-0.5 leading-relaxed">{message}</p>}
+      <div className="min-w-0 flex-1">
+        {title && (
+          <p className={`text-sm font-semibold ${variant.titleClass}`}>
+            {title}
+          </p>
+        )}
+
+        {message && (
+          <p className="mt-0.5 text-sm leading-relaxed text-cyber-text">
+            {message}
+          </p>
+        )}
       </div>
 
-      {/* Dismiss */}
-      {onDismiss && (
-        <button
-          onClick={handleDismiss}
-          className="flex-shrink-0 text-cyber-muted hover:text-cyber-bright transition-colors"
-          aria-label="Dismiss"
-        >
-          <X size={16} />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={dismissBanner}
+        aria-label="Dismiss"
+        className="flex-shrink-0 text-cyber-muted transition-colors hover:text-cyber-bright"
+      >
+        <X size={16} />
+      </button>
     </div>
   );
 }

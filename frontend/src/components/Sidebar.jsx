@@ -1,128 +1,171 @@
-import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, ShieldCheck, User, Settings,
-  LogOut, Shield, Lock, ChevronRight,
+  AlertTriangle,
+  ChevronRight,
+  LayoutDashboard,
+  Lock,
+  LogOut,
+  Settings,
+  Shield,
+  ShieldCheck,
+  User,
 } from 'lucide-react';
+
 import { useAuth } from '../App.jsx';
 
-/**
- * Sidebar — left navigation panel.
- * Props:
- *   open     — boolean (mobile visibility)
- *   onClose  — callback to close on mobile
- */
+const SECTION_HEADING_CLASS =
+  'mb-2 px-3 font-mono-code text-xs font-semibold uppercase tracking-widest text-cyber-muted';
+
+const ROLE_LABELS = {
+  admin: 'Administrator',
+  analyst: 'Security Analyst',
+  viewer: 'Viewer',
+  user: 'User',
+};
+
 export default function Sidebar({ open, onClose }) {
   const { user, logout } = useAuth();
-  const navigate         = useNavigate();
+  const navigate = useNavigate();
+
+  const userInitials = user?.username
+    ? user.username.slice(0, 2).toUpperCase()
+    : 'SX';
+
+  const role = user?.role || 'user';
+  const canViewAlerts = ['admin', 'analyst', 'viewer'].includes(role);
+  const canViewAdminPanel = role === 'admin';
+  const mfaEnabled = user?.mfaEnabled ?? true;
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
   };
 
-  const navItemCls = ({ isActive }) =>
-    `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group
-     ${isActive
-       ? 'bg-cyber-blue/15 text-cyber-blue border-r-2 border-cyber-blue'
-       : 'text-cyber-muted hover:text-cyber-bright hover:bg-cyber-border/20'}`;
+  const getNavigationItemClass = ({ isActive }) =>
+    [
+      'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
+      'transition-all duration-200',
+      isActive
+        ? 'border-r-2 border-cyber-blue bg-cyber-blue/15 text-cyber-blue'
+        : 'text-cyber-muted hover:bg-cyber-border/20 hover:text-cyber-bright',
+    ].join(' ');
 
   return (
     <>
-      {/* Mobile overlay */}
       {open && (
         <div
-          className="fixed inset-0 z-20 bg-black/60 backdrop-blur-xs lg:hidden"
+          className="fixed inset-0 z-20 bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={onClose}
         />
       )}
 
-      {/* Sidebar panel */}
       <aside
-        className={`fixed top-0 left-0 z-30 h-screen w-64 flex flex-col
-                    bg-cyber-surface border-r border-cyber-border/50
-                    transition-transform duration-300 ease-in-out
-                    ${open ? 'translate-x-0' : '-translate-x-full'}
-                    lg:translate-x-0 lg:static lg:z-auto`}
+        className={[
+          'fixed left-0 top-0 z-30 flex h-screen w-64 flex-col',
+          'border-r border-cyber-border/50 bg-cyber-surface',
+          'transition-transform duration-300 ease-in-out',
+          open ? 'translate-x-0' : '-translate-x-full',
+          'lg:static lg:z-auto lg:translate-x-0',
+        ].join(' ')}
       >
-        {/* Brand header */}
-        <div className="flex h-16 items-center gap-3 px-5 border-b border-cyber-border/50">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyber-blue/20 border border-cyber-blue/40">
+        <div className="flex h-16 items-center gap-3 border-b border-cyber-border/50 px-5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyber-blue/40 bg-cyber-blue/20">
             <Shield size={18} className="text-cyber-blue" />
           </div>
+
           <div>
-            <p className="font-display text-sm font-bold text-cyber-bright tracking-wider">
-              SecureAuthX
+            <p className="font-display text-sm font-bold tracking-wider text-cyber-bright">
+              SecureAuthenticationX
             </p>
-            <p className="text-xs text-cyber-muted font-mono-code">v1.0.0</p>
+            <p className="font-mono-code text-xs text-cyber-muted">
+              v2.0.0
+            </p>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+          <p className={SECTION_HEADING_CLASS}>Main</p>
 
-          {/* Main section */}
-          <p className="mb-2 px-3 text-xs font-semibold tracking-widest text-cyber-muted uppercase font-mono-code">
-            Main
-          </p>
-
-          <NavLink to="/dashboard" className={navItemCls} onClick={onClose}>
+          <NavLink to="/dashboard" className={getNavigationItemClass} onClick={onClose}>
             <LayoutDashboard size={16} />
             Dashboard
-            <ChevronRight size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ChevronRight size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
           </NavLink>
 
-          <NavLink to="/profile" className={navItemCls} onClick={onClose}>
+          {canViewAlerts && (
+            <NavLink to="/alerts" className={getNavigationItemClass} onClick={onClose}>
+              <AlertTriangle size={16} />
+              Alerts
+              <ChevronRight size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
+            </NavLink>
+          )}
+
+          <NavLink to="/profile" className={getNavigationItemClass} onClick={onClose}>
             <User size={16} />
             Profile
-            <ChevronRight size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ChevronRight size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
           </NavLink>
 
-          {/* Admin section — only visible to admins */}
-          {user?.role === 'admin' && (
+          {canViewAdminPanel && (
             <>
-              <p className="mt-5 mb-2 px-3 text-xs font-semibold tracking-widest text-cyber-muted uppercase font-mono-code">
-                Admin
-              </p>
-              <NavLink to="/admin" className={navItemCls} onClick={onClose}>
+              <p className={`mt-5 ${SECTION_HEADING_CLASS}`}>Admin</p>
+
+              <NavLink to="/admin" className={getNavigationItemClass} onClick={onClose}>
                 <ShieldCheck size={16} />
                 Admin Panel
-                <ChevronRight size={12} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                <ChevronRight size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
               </NavLink>
             </>
           )}
 
-          {/* Security section */}
-          <p className="mt-5 mb-2 px-3 text-xs font-semibold tracking-widest text-cyber-muted uppercase font-mono-code">
-            Security
-          </p>
+          <p className={`mt-5 ${SECTION_HEADING_CLASS}`}>Security</p>
+
           <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-cyber-muted">
             <Lock size={16} />
             <span>2FA Status</span>
-            <span className="ml-auto badge-green text-xs">On</span>
+
+            <span className={`ml-auto text-xs ${mfaEnabled ? 'badge-green' : 'badge-yellow'}`}>
+              {mfaEnabled ? 'On' : 'Off'}
+            </span>
           </div>
-          <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-cyber-muted">
+
+          <NavLink to="/security-settings" className={getNavigationItemClass} onClick={onClose}>
             <Settings size={16} />
-            <span>Settings</span>
-          </div>
+            Security Settings
+            <ChevronRight size={12} className="ml-auto opacity-0 transition-opacity group-hover:opacity-100" />
+          </NavLink>
         </nav>
 
-        {/* User footer */}
         <div className="border-t border-cyber-border/50 px-3 py-4">
-          <div className="flex items-center gap-3 rounded-lg px-3 py-2 mb-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full
-                            bg-cyber-blue/20 border border-cyber-blue/40 text-cyber-blue text-xs font-bold font-display">
-              {user?.username?.slice(0, 2).toUpperCase() || 'SX'}
+          <div className="mb-2 flex items-center gap-3 rounded-lg px-3 py-2">
+            <div
+              className="
+                flex h-8 w-8 items-center justify-center rounded-full
+                border border-cyber-blue/40 bg-cyber-blue/20
+                font-display text-xs font-bold text-cyber-blue
+              "
+            >
+              {userInitials}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-cyber-bright truncate">{user?.username}</p>
-              <p className="text-xs text-cyber-muted truncate">{user?.role || 'user'}</p>
+
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-cyber-bright">
+                {user?.username || 'Guest'}
+              </p>
+
+              <p className="truncate text-xs text-cyber-muted">
+                {ROLE_LABELS[role] || 'User'}
+              </p>
             </div>
           </div>
+
           <button
+            type="button"
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm
-                       text-cyber-red hover:bg-cyber-red/10 transition-colors"
+            className="
+              flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm
+              text-cyber-red transition-colors hover:bg-cyber-red/10
+            "
           >
             <LogOut size={16} />
             Sign Out

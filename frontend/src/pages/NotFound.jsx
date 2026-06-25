@@ -1,14 +1,17 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { Shield, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Shield, Compass, ArrowLeft } from 'lucide-react';
 
 export default function NotFound() {
-  return (
-    <div className="min-h-screen bg-cyber-bg flex flex-col items-center justify-center px-4 scan-overlay">
+  const location = useLocation();
 
-      {/* Grid bg */}
+  const handleGoBack = () => {
+    window.history.back();
+  };
+
+  return (
+    <div className="scan-overlay flex min-h-screen items-center justify-center bg-cyber-bg px-4">
       <div
-        className="fixed inset-0 pointer-events-none"
+        className="pointer-events-none fixed inset-0"
         style={{
           backgroundImage:
             'linear-gradient(rgba(14,165,233,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(14,165,233,0.04) 1px, transparent 1px)',
@@ -16,66 +19,78 @@ export default function NotFound() {
         }}
       />
 
-      {/* Glow */}
-      <div className="fixed inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-96 h-96 bg-cyber-red/5 rounded-full blur-3xl" />
+      <div className="pointer-events-none fixed inset-0 flex items-center justify-center">
+        <div className="h-96 w-96 rounded-full bg-cyber-red/5 blur-3xl" />
       </div>
 
-      <div className="relative text-center max-w-md animate-slide-up">
-
-        {/* Icon */}
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl
-                        bg-cyber-red/10 border border-cyber-red/40 mb-6 shadow-neon-red">
-          <AlertTriangle size={40} className="text-cyber-red" />
+      <div className="relative max-w-md text-center animate-slide-up">
+        <div
+          className="mb-6 inline-flex h-20 w-20 items-center justify-center rounded-2xl
+                     border border-cyber-red/40 bg-cyber-red/10 shadow-neon-red"
+        >
+          <Compass size={40} className="text-cyber-red" />
         </div>
 
-        {/* 404 */}
-        <div className="font-display text-8xl font-black text-cyber-red mb-2" style={{
-          textShadow: '0 0 40px rgba(239,68,68,0.5), 0 0 80px rgba(239,68,68,0.2)',
-        }}>
+        <div
+          className="mb-2 font-display text-8xl font-black text-cyber-red"
+          style={{
+            textShadow: '0 0 40px rgba(239,68,68,0.5), 0 0 80px rgba(239,68,68,0.2)',
+          }}
+        >
           404
         </div>
 
-        <h1 className="font-display text-2xl font-bold text-cyber-bright mb-3">
-          ACCESS DENIED
+        <h1 className="mb-3 font-display text-2xl font-bold text-cyber-bright">
+          ROUTE NOT FOUND
         </h1>
 
-        <p className="text-cyber-muted text-sm mb-2 font-mono-code">
+        <p className="mb-2 font-mono-code text-sm text-cyber-muted">
           ERROR_CODE: ROUTE_NOT_FOUND
         </p>
 
-        <p className="text-cyber-text text-sm mb-8 leading-relaxed">
-          The resource you requested does not exist or has been classified.
-          Your access attempt has been logged.
+        <p className="mb-8 text-sm leading-relaxed text-cyber-text">
+          The page you're looking for doesn't exist or may have been moved.
+          Double-check the URL or head back to a known location.
         </p>
 
-        {/* Fake terminal */}
-        <div className="glass-card border border-cyber-border/60 rounded-lg p-4 text-left mb-8 font-mono-code text-xs">
-          <p className="text-cyber-muted mb-1">$ trace-route --target <span className="text-cyber-blue">unknown</span></p>
+        <div className="glass-card mb-8 rounded-lg border border-cyber-border/60 p-4 text-left font-mono-code text-xs">
+          <p className="mb-1 text-cyber-muted">
+            $ trace-route --target{' '}
+            <span className="break-all text-cyber-blue">{location.pathname}</span>
+          </p>
+
           <p className="text-cyber-red">✗ Destination unreachable</p>
-          <p className="text-cyber-muted mt-1">$ sys-status</p>
+
+          <p className="mt-1 text-cyber-muted">$ sys-status</p>
+
           <p className="text-cyber-green">✓ All other systems nominal</p>
-          <p className="text-cyber-blue mt-1">▶ Recommend: return to dashboard</p>
+
+          <p className="mt-1 text-cyber-blue">
+            ▶ Recommended action: return to dashboard
+          </p>
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link to="/dashboard" className="btn-cyber gap-2 w-full sm:w-auto">
-            <Shield size={16} /> Return to Dashboard
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link to="/dashboard" className="btn-cyber w-full gap-2 sm:w-auto">
+            <Shield size={16} />
+            Return to Dashboard
           </Link>
+
           <button
-            onClick={() => window.history.back()}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium text-cyber-muted
-                       hover:text-cyber-bright transition-colors w-full sm:w-auto justify-center"
+            type="button"
+            onClick={handleGoBack}
+            className="flex w-full items-center justify-center gap-2 px-5 py-2.5
+                       text-sm font-medium text-cyber-muted transition-colors
+                       hover:text-cyber-bright sm:w-auto"
           >
-            <ArrowLeft size={16} /> Go Back
+            <ArrowLeft size={16} />
+            Go Back
           </button>
         </div>
 
-        {/* Brand */}
         <div className="mt-12 flex items-center justify-center gap-2 text-cyber-muted">
           <Shield size={14} className="text-cyber-blue" />
-          <span className="font-display text-xs tracking-widest">SECUREAUTHX</span>
+          <span className="font-display text-xs tracking-widest">SecureAuthenticationX</span>
         </div>
       </div>
     </div>

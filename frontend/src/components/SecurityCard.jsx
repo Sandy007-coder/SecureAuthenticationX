@@ -1,18 +1,34 @@
-import React from 'react';
+const ACCENT_STYLES = {
+  blue: {
+    borderClass: 'border-cyber-blue/40',
+    shadowClass: 'shadow-neon',
+    hoverShadowClass: 'hover:shadow-neon',
+    iconClass: 'text-cyber-blue',
+    backgroundClass: 'bg-cyber-blue/10',
+  },
+  green: {
+    borderClass: 'border-cyber-green/40',
+    shadowClass: 'shadow-neon-green',
+    hoverShadowClass: 'hover:shadow-neon-green',
+    iconClass: 'text-cyber-green',
+    backgroundClass: 'bg-cyber-green/10',
+  },
+  red: {
+    borderClass: 'border-cyber-red/40',
+    shadowClass: 'shadow-neon-red',
+    hoverShadowClass: 'hover:shadow-neon-red',
+    iconClass: 'text-cyber-red',
+    backgroundClass: 'bg-cyber-red/10',
+  },
+  yellow: {
+    borderClass: 'border-cyber-yellow/40',
+    shadowClass: '',
+    hoverShadowClass: '',
+    iconClass: 'text-cyber-yellow',
+    backgroundClass: 'bg-cyber-yellow/10',
+  },
+};
 
-/**
- * SecurityCard
- * A glassmorphism analytics card for the dashboard.
- *
- * Props:
- *   icon      — JSX element (Lucide icon)
- *   label     — small uppercase label string
- *   value     — large metric value (string | number)
- *   sub       — optional sub-text
- *   accent    — 'blue' | 'green' | 'red' | 'yellow'  (default 'blue')
- *   trend     — optional '↑ 12%' type string
- *   trendUp   — boolean; true = green, false = red
- */
 export default function SecurityCard({
   icon,
   label,
@@ -21,45 +37,65 @@ export default function SecurityCard({
   accent = 'blue',
   trend,
   trendUp,
+  onClick,
 }) {
-  const accentMap = {
-    blue:   { border: 'border-cyber-blue/40',   glow: 'shadow-neon',       icon: 'text-cyber-blue',   bg: 'bg-cyber-blue/10' },
-    green:  { border: 'border-cyber-green/40',  glow: 'shadow-neon-green', icon: 'text-cyber-green',  bg: 'bg-cyber-green/10' },
-    red:    { border: 'border-cyber-red/40',    glow: 'shadow-neon-red',   icon: 'text-cyber-red',    bg: 'bg-cyber-red/10' },
-    yellow: { border: 'border-cyber-yellow/40', glow: '',                  icon: 'text-cyber-yellow', bg: 'bg-cyber-yellow/10' },
-  };
+  const styles = ACCENT_STYLES[accent] ?? ACCENT_STYLES.blue;
 
-  const a = accentMap[accent] || accentMap.blue;
+  const trendClass = trendUp
+    ? 'bg-cyber-green/10 text-cyber-green border border-cyber-green/30'
+    : 'bg-cyber-red/10 text-cyber-red border border-cyber-red/30';
+
+  const Wrapper = onClick ? 'button' : 'div';
 
   return (
-    <div
-      className={`glass-card border ${a.border} ${a.glow} p-5 flex flex-col gap-4
-                  hover:-translate-y-1 hover:${a.glow} transition-all duration-300 animate-slide-up`}
+    <Wrapper
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`
+        glass-card flex w-full flex-col gap-4 border p-5 text-left
+        transition-all duration-300 animate-slide-up
+        hover:-translate-y-1
+        ${styles.borderClass}
+        ${styles.shadowClass}
+        ${styles.hoverShadowClass}
+        ${onClick ? 'cursor-pointer' : ''}
+      `}
     >
-      {/* Top row */}
       <div className="flex items-center justify-between">
-        <div className={`p-2.5 rounded-lg ${a.bg}`}>
-          <span className={a.icon}>{icon}</span>
+        <div className={`rounded-lg p-2.5 ${styles.backgroundClass}`}>
+          <span className={styles.iconClass}>
+            {icon}
+          </span>
         </div>
+
         {trend && (
           <span
-            className={`text-xs font-semibold font-mono-code px-2 py-0.5 rounded-full
-                        ${trendUp
-                          ? 'bg-cyber-green/10 text-cyber-green border border-cyber-green/30'
-                          : 'bg-cyber-red/10 text-cyber-red border border-cyber-red/30'
-                        }`}
+            className={`
+              rounded-full px-2 py-0.5
+              font-mono-code text-xs font-semibold
+              ${trendClass}
+            `}
           >
             {trend}
           </span>
         )}
       </div>
 
-      {/* Metric */}
       <div>
-        <p className="text-cyber-muted text-xs tracking-widest uppercase mb-1 font-mono-code">{label}</p>
-        <p className={`text-3xl font-bold font-display ${a.icon}`}>{value}</p>
-        {sub && <p className="text-cyber-muted text-xs mt-1">{sub}</p>}
+        <p className="mb-1 font-mono-code text-xs uppercase tracking-widest text-cyber-muted">
+          {label}
+        </p>
+
+        <p className={`font-display text-3xl font-bold ${styles.iconClass}`}>
+          {value}
+        </p>
+
+        {sub && (
+          <p className="mt-1 text-xs text-cyber-muted">
+            {sub}
+          </p>
+        )}
       </div>
-    </div>
+    </Wrapper>
   );
 }

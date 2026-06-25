@@ -1,57 +1,152 @@
-import React from 'react';
-import { Monitor, Smartphone, Globe, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CheckCircle,
+  Clock,
+  Globe,
+  Monitor,
+  Smartphone,
+  XCircle,
+} from 'lucide-react';
 
-/**
- * LoginActivityTable
- * Displays a list of recent login events.
- *
- * Props:
- *   activities — array of activity objects (see shape below)
- *   loading    — boolean
- *
- * Activity shape:
- * {
- *   id:        string | number,
- *   user:      string,
- *   ip:        string,
- *   location:  string,
- *   device:    'desktop' | 'mobile' | 'unknown',
- *   status:    'success' | 'failed' | 'pending',
- *   timestamp: string,
- * }
- */
-export default function LoginActivityTable({ activities = [], loading = false }) {
-  const deviceIcon = (device) => {
-    if (device === 'desktop') return <Monitor size={14} className="text-cyber-blue" />;
-    if (device === 'mobile')  return <Smartphone size={14} className="text-cyber-accent" />;
-    return <Globe size={14} className="text-cyber-muted" />;
-  };
+const DEVICE_CONFIG = {
+  desktop: {
+    Icon: Monitor,
+    iconClass: 'text-cyber-blue',
+  },
+  mobile: {
+    Icon: Smartphone,
+    iconClass: 'text-cyber-accent',
+  },
+  unknown: {
+    Icon: Globe,
+    iconClass: 'text-cyber-muted',
+  },
+};
 
-  const statusBadge = (status) => {
-    if (status === 'success')
-      return <span className="badge-green"><CheckCircle size={10} /> Success</span>;
-    if (status === 'failed')
-      return <span className="badge-red"><XCircle size={10} /> Failed</span>;
-    return <span className="badge-yellow"><Clock size={10} /> Pending</span>;
+const STATUS_CONFIG = {
+  success: {
+    Icon: CheckCircle,
+    className: 'badge-green',
+    label: 'Success',
+  },
+  failed: {
+    Icon: XCircle,
+    className: 'badge-red',
+    label: 'Failed',
+  },
+  pending: {
+    Icon: Clock,
+    className: 'badge-yellow',
+    label: 'Pending',
+  },
+  suspicious: {
+    Icon: AlertTriangle,
+    className: 'badge-red',
+    label: 'Suspicious',
+  },
+};
+
+const SORTABLE_COLUMNS = [
+  { key: 'user', label: 'User' },
+  { key: 'ip', label: 'IP Address' },
+  { key: 'location', label: 'Location' },
+  { key: 'device', label: 'Device' },
+  { key: 'status', label: 'Status' },
+  { key: 'timestamp', label: 'Time' },
+];
+
+function DeviceIndicator({ device }) {
+  const { Icon, iconClass } = DEVICE_CONFIG[device] ?? DEVICE_CONFIG.unknown;
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <Icon size={14} className={iconClass} />
+      <span className="capitalize text-cyber-muted">
+        {device || 'unknown'}
+      </span>
+    </span>
+  );
+}
+
+function StatusBadge({ status }) {
+  const { Icon, className, label } = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
+
+  return (
+    <span className={className}>
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          key={`skeleton-${index}`}
+          className="h-12 animate-pulse rounded-lg bg-cyber-surface/60"
+        />
+      ))}
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="py-10 text-center text-cyber-muted">
+      <Globe size={32} className="mx-auto mb-2 opacity-40" />
+      <p className="text-sm">No login activity recorded.</p>
+    </div>
+  );
+}
+
+function SortIcon({ active, direction }) {
+  if (!active) return <ArrowUpDown size={12} className="opacity-40" />;
+  return direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
+}
+
+export default function LoginActivityTable({
+  activities = [],
+  loading = false,
+}) {
+  const [sortKey, setSortKey] = useState('timestamp');
+  const [sortDirection, setSortDirection] = useState('desc');
+
+  const sortedActivities = useMemo(() => {
+    const sorted = [...activities];
+
+    sorted.sort((a, b) => {
+      const aVal = (a[sortKey] ?? '').toString().toLowerCase();
+      const bVal = (b[sortKey] ?? '').toString().toLowerCase();
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return sorted;
+  }, [activities, sortKey, sortDirection]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
   };
 
   if (loading) {
-    return (
-      <div className="space-y-2">
-        {[...Array(5)].map((_, i) => (
-          <div key={i} className="h-12 bg-cyber-surface/60 rounded-lg animate-pulse" />
-        ))}
-      </div>
-    );
+    return <LoadingState />;
   }
 
   if (activities.length === 0) {
-    return (
-      <div className="text-center py-10 text-cyber-muted">
-        <Globe size={32} className="mx-auto mb-2 opacity-40" />
-        <p className="text-sm">No login activity recorded.</p>
-      </div>
-    );
+    return <EmptyState />;
   }
 
   return (
@@ -59,33 +154,53 @@ export default function LoginActivityTable({ activities = [], loading = false })
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-cyber-border/50">
-            {['User', 'IP Address', 'Location', 'Device', 'Status', 'Time'].map((h) => (
+            {SORTABLE_COLUMNS.map(({ key, label }) => (
               <th
-                key={h}
-                className="pb-3 pr-4 text-left text-xs font-semibold text-cyber-muted tracking-widest uppercase font-mono-code"
+                key={key}
+                className="pb-3 pr-4 text-left font-mono-code text-xs font-semibold uppercase tracking-widest text-cyber-muted"
               >
-                {h}
+                <button
+                  type="button"
+                  onClick={() => handleSort(key)}
+                  className="flex items-center gap-1 transition-colors hover:text-cyber-bright"
+                >
+                  {label}
+                  <SortIcon active={sortKey === key} direction={sortDirection} />
+                </button>
               </th>
             ))}
           </tr>
         </thead>
+
         <tbody className="divide-y divide-cyber-border/30">
-          {activities.map((a) => (
+          {sortedActivities.map((activity, index) => (
             <tr
-              key={a.id}
-              className="hover:bg-cyber-blue/5 transition-colors duration-150"
+              key={activity.id ?? `${activity.ip}-${activity.timestamp}-${index}`}
+              className="transition-colors duration-150 hover:bg-cyber-blue/5"
             >
-              <td className="py-3 pr-4 text-cyber-bright font-medium">{a.user}</td>
-              <td className="py-3 pr-4 font-mono-code text-cyber-blue text-xs">{a.ip}</td>
-              <td className="py-3 pr-4 text-cyber-text">{a.location}</td>
-              <td className="py-3 pr-4">
-                <span className="flex items-center gap-1.5">
-                  {deviceIcon(a.device)}
-                  <span className="text-cyber-muted capitalize">{a.device}</span>
-                </span>
+              <td className="py-3 pr-4 font-medium text-cyber-bright">
+                {activity.user || 'Unknown'}
               </td>
-              <td className="py-3 pr-4">{statusBadge(a.status)}</td>
-              <td className="py-3 text-cyber-muted text-xs font-mono-code whitespace-nowrap">{a.timestamp}</td>
+
+              <td className="py-3 pr-4 font-mono-code text-xs text-cyber-blue">
+                {activity.ip || '—'}
+              </td>
+
+              <td className="py-3 pr-4 text-cyber-text">
+                {activity.location || 'Unknown'}
+              </td>
+
+              <td className="py-3 pr-4">
+                <DeviceIndicator device={activity.device} />
+              </td>
+
+              <td className="py-3 pr-4">
+                <StatusBadge status={activity.status} />
+              </td>
+
+              <td className="whitespace-nowrap py-3 text-xs font-mono-code text-cyber-muted">
+                {activity.timestamp || '—'}
+              </td>
             </tr>
           ))}
         </tbody>

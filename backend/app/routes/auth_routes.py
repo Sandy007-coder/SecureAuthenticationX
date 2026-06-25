@@ -1,290 +1,424 @@
-"""
-app/routes/auth_routes.py - Authentication routes.
-Handles user registration, login, logout, and profile retrieval.
-Implements account lockout, bcrypt password hashing, JWT cookie auth, and audit logging.
-"""
-
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, request, jsonify, g, make_response
+
+from flask import Blueprint, g, jsonify, make_response, request
 
 from app import limiter
-from app.database.db import get_connection
-from app.utils.validators import validate_username, validate_email, validate_password
+from app.database.db import get_db
+from app.middleware.auth_middleware import token_required
+from app.utils.logger import log_event
 from app.utils.password_utils import hash_password, verify_password
 from app.utils.token_utils import generate_token
-from app.utils.logger import log_event
-from app.middleware.auth_middleware import token_required
+from app.utils.validators import validate_email, validate_password, validate_username
+import logging
 
-# Blueprint registration
+logger = logging.getLogger(__name__)
+
 auth_bp = Blueprint("auth", __name__)
 
-# Account lockout configuration
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_DURATION_MINUTES = 15
 
+AUTH_COOKIE_NAME = "auth_token"
+AUTH_COOKIE_MAX_AGE = 7200
 
-# ===========================================================================
-# POST /api/auth/register
-# ===========================================================================
+
+def _get_client_ip() -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _set_auth_cookie(response, token: str) -> None:
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        token,
+        httponly=True,
+        secure=True,
+        samesite="Strict",
+        max_age=AUTH_COOKIE_MAX_AGE,
+    )
+
+
+def _clear_auth_cookie(response) -> None:
+    response.set_cookie(
+        AUTH_COOKIE_NAME,
+        "",
+        httponly=True,
+        secure=True,
+        samesite="Strict",
+        max_age=0,
+    )
+
 @auth_bp.route("/register", methods=["POST"])
 @limiter.limit("10 per minute")
 def register():
-    """
-    Registers a new user account.
-    - Validates username, email, and password
-    - Prevents duplicate email registration
-    - Hashes password with bcrypt before storing
-    - Logs the registration event
-    """
-    data = request.get_json(silent=True)
-
-    if not data:
+    payload = request.get_json(silent=True)
+    if not payload:
         return jsonify({"success": False, "message": "Request body must be JSON."}), 400
 
-    username = data.get("username", "").strip()
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
+    username = payload.get("username", "").strip()
+    email = payload.get("email", "").strip().lower()
+    password = payload.get("password", "")
+    client_ip = _get_client_ip()
 
-    # ---- Input Validation ----
-    is_valid, error = validate_username(username)
-    if not is_valid:
-        return jsonify({"success": False, "message": error}), 422
+    for validator, value in (
+        (validate_username, username),
+        (validate_email, email),
+        (validate_password, password),
+    ):
+        is_valid, error_message = validator(value)
+        if not is_valid:
+            return jsonify({"success": False, "message": error_message}), 422
 
-    is_valid, error = validate_email(email)
-    if not is_valid:
-        return jsonify({"success": False, "message": error}), 422
+    try:
+        with get_db() as db:
+            existing = db.execute(
+                "SELECT id FROM users WHERE email = ?", (email,)
+            ).fetchone()
 
-    is_valid, error = validate_password(password)
-    if not is_valid:
-        return jsonify({"success": False, "message": error}), 422
+            if existing:
+                return jsonify({
+                    "success": False,
+                    "message": "An account with this email already exists.",
+                }), 409
 
-    conn = get_connection()
+            password_hash = hash_password(password)
 
-    # ---- Duplicate Email Check ----
-    existing = conn.execute(
-        "SELECT id FROM users WHERE email = ?", (email,)
-    ).fetchone()
+            db.execute(
+                """
+                INSERT INTO users (username, email, password, role, failed_attempts, lock_until)
+                VALUES (?, ?, ?, 'user', 0, NULL)
+                """,
+                (username, email, password_hash),
+            )
 
-    if existing:
-        conn.close()
-        return jsonify({"success": False, "message": "An account with this email already exists."}), 409
+        log_event(email, "REGISTER", client_ip, user_agent=request.headers.get("User-Agent"))
+        logger.info("New user registered | email=%s | ip=%s", email, client_ip)
 
-    # ---- Hash Password & Store User ----
-    hashed_pw = hash_password(password)
+        return jsonify({
+            "success": True,
+            "message": "Account registered successfully.",
+        }), 201
 
-    conn.execute(
-        """
-        INSERT INTO users (username, email, password, role, failed_attempts, lock_until, created_at)
-        VALUES (?, ?, ?, 'user', 0, NULL, datetime('now'))
-        """,
-        (username, email, hashed_pw)
-    )
-    conn.commit()
-    conn.close()
-
-    # ---- Audit Log ----
-    ip = request.remote_addr or "unknown"
-    log_event(email, "REGISTER", ip)
-
-    return jsonify({
-        "success": True,
-        "message": "Account registered successfully."
-    }), 201
+    except Exception as e:
+        logger.error("Registration failed | email=%s | error=%s", email, e)
+        return jsonify({"success": False, "message": "Registration failed. Please try again."}), 500
 
 
-# ===========================================================================
-# POST /api/auth/login
-# ===========================================================================
 @auth_bp.route("/login", methods=["POST"])
 @limiter.limit("10 per minute")
 def login():
-    """
-    Authenticates a user and issues a JWT stored in an HTTP-only cookie.
-    - Checks account lockout status
-    - Verifies hashed password
-    - Increments failed attempt counter on failure
-    - Resets counter and issues token on success
-    - Logs all login events
-    """
-    data = request.get_json(silent=True)
-
-    if not data:
+    payload = request.get_json(silent=True)
+    if not payload:
         return jsonify({"success": False, "message": "Request body must be JSON."}), 400
 
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
+    email = payload.get("email", "").strip().lower()
+    password = payload.get("password", "")
+    client_ip = _get_client_ip()
+    user_agent = request.headers.get("User-Agent", "unknown")
 
-    ip = request.remote_addr or "unknown"
-
-    # ---- Basic Presence Check ----
     if not email or not password:
         return jsonify({"success": False, "message": "Email and password are required."}), 400
 
-    conn = get_connection()
+    try:
+        with get_db() as db:
+            user = db.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
 
-    # ---- Fetch User by Email (parameterized query) ----
-    user = conn.execute(
-        "SELECT * FROM users WHERE email = ?", (email,)
-    ).fetchone()
+            if not user:
+                log_event(email, "LOGIN_FAILURE_USER_NOT_FOUND", client_ip, user_agent=user_agent)
+                # Generic message — do not reveal whether email exists
+                return jsonify({"success": False, "message": "Invalid credentials."}), 401
 
-    if not user:
-        conn.close()
-        log_event(email, "LOGIN_FAILURE", ip)
-        # Generic message to prevent user enumeration
-        return jsonify({"success": False, "message": "Invalid credentials."}), 401
+            if not user["is_active"]:
+                log_event(email, "LOGIN_FAILURE_INACTIVE", client_ip, user_agent=user_agent)
+                return jsonify({
+                    "success": False,
+                    "message": "This account has been deactivated. Contact support.",
+                }), 403
 
-    # ---- Account Lockout Check ----
-    if user["lock_until"]:
-        lock_until_dt = datetime.fromisoformat(user["lock_until"])
-        now_utc = datetime.now(timezone.utc)
+            if user["lock_until"]:
+                lock_until = datetime.fromisoformat(user["lock_until"])
+                if lock_until.tzinfo is None:
+                    lock_until = lock_until.replace(tzinfo=timezone.utc)
 
-        # Make lock_until timezone-aware if it isn't already
-        if lock_until_dt.tzinfo is None:
-            lock_until_dt = lock_until_dt.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) < lock_until:
+                    remaining = int((lock_until - datetime.now(timezone.utc)).total_seconds() // 60) + 1
+                    log_event(email, "LOGIN_ATTEMPT_WHILE_LOCKED", client_ip, user_agent=user_agent)
+                    return jsonify({
+                        "success": False,
+                        "message": f"Account is temporarily locked. Try again in {remaining} minute(s).",
+                    }), 403
 
-        if now_utc < lock_until_dt:
-            remaining = int((lock_until_dt - now_utc).total_seconds() // 60) + 1
-            conn.close()
-            log_event(email, "ACCOUNT_LOCKED_ACCESS_ATTEMPT", ip)
-            return jsonify({
-                "success": False,
-                "message": f"Account is temporarily locked. Try again in {remaining} minute(s)."
-            }), 403
+            if not verify_password(password, user["password"]):
+                failed_attempts = user["failed_attempts"] + 1
 
-    # ---- Password Verification ----
-    if not verify_password(password, user["password"]):
-        # Increment failed attempts counter
-        new_attempts = user["failed_attempts"] + 1
-        lock_until_value = None
+                if failed_attempts >= MAX_FAILED_ATTEMPTS:
+                    lock_until_value = (
+                        datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+                    ).isoformat()
 
-        if new_attempts >= MAX_FAILED_ATTEMPTS:
-            # Lock the account for LOCKOUT_DURATION_MINUTES
-            lock_until_value = (
-                datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
-            ).isoformat()
+                    db.execute(
+                        """
+                        UPDATE users
+                        SET failed_attempts = ?, lock_until = ?, updated_at = datetime('now')
+                        WHERE email = ?
+                        """,
+                        (failed_attempts, lock_until_value, email),
+                    )
 
-            conn.execute(
-                "UPDATE users SET failed_attempts = ?, lock_until = ? WHERE email = ?",
-                (new_attempts, lock_until_value, email)
+                    log_event(email, "ACCOUNT_LOCKED", client_ip, user_agent=user_agent)
+                    logger.warning("Account locked | email=%s | ip=%s", email, client_ip)
+
+                    return jsonify({
+                        "success": False,
+                        "message": f"Too many failed attempts. Account locked for {LOCKOUT_DURATION_MINUTES} minutes.",
+                    }), 403
+
+                db.execute(
+                    """
+                    UPDATE users
+                    SET failed_attempts = ?, updated_at = datetime('now')
+                    WHERE email = ?
+                    """,
+                    (failed_attempts, email),
+                )
+
+                log_event(email, "LOGIN_FAILURE", client_ip, user_agent=user_agent)
+
+                remaining_attempts = MAX_FAILED_ATTEMPTS - failed_attempts
+                return jsonify({
+                    "success": False,
+                    "message": f"Invalid credentials. {remaining_attempts} attempt(s) remaining before lockout.",
+                }), 401
+
+            db.execute(
+                """
+                UPDATE users
+                SET failed_attempts = 0,
+                    lock_until = NULL,
+                    last_login = datetime('now'),
+                    updated_at = datetime('now')
+                WHERE email = ?
+                """,
+                (email,),
             )
-            conn.commit()
-            conn.close()
 
-            log_event(email, "ACCOUNT_LOCKED", ip)
-            return jsonify({
-                "success": False,
-                "message": f"Too many failed attempts. Account locked for {LOCKOUT_DURATION_MINUTES} minutes."
-            }), 403
-
-        conn.execute(
-            "UPDATE users SET failed_attempts = ? WHERE email = ?",
-            (new_attempts, email)
+        token = generate_token(
+            user_id=user["id"],
+            email=user["email"],
+            role=user["role"],
+            is_active=bool(user["is_active"]),
         )
-        conn.commit()
-        conn.close()
 
-        log_event(email, "LOGIN_FAILURE", ip)
-        attempts_left = MAX_FAILED_ATTEMPTS - new_attempts
-        return jsonify({
-            "success": False,
-            "message": f"Invalid credentials. {attempts_left} attempt(s) remaining before lockout."
-        }), 401
+        log_event(email, "LOGIN_SUCCESS", client_ip, user_agent=user_agent)
+        logger.info("Login successful | email=%s | role=%s | ip=%s", email, user["role"], client_ip)
 
-    # ---- Successful Login ----
-    # Reset failed attempts and clear any existing lock
-    conn.execute(
-        "UPDATE users SET failed_attempts = 0, lock_until = NULL WHERE email = ?",
-        (email,)
-    )
-    conn.commit()
-    conn.close()
+        response = make_response(jsonify({
+            "success": True,
+            "message": "Login successful.",
+            "user": {
+                "id": user["id"],
+                "username": user["username"],
+                "email": user["email"],
+                "role": user["role"],
+            },
+        }))
 
-    # Generate JWT token
-    token = generate_token(user["id"], user["email"], user["role"])
+        _set_auth_cookie(response, token)
+        return response, 200
 
-    log_event(email, "LOGIN_SUCCESS", ip)
-
-    # Store token in HTTP-only cookie (not accessible via JavaScript)
-    response = make_response(jsonify({
-        "success": True,
-        "message": "Login successful.",
-        "role": user["role"]
-    }))
-
-    response.set_cookie(
-        "auth_token",
-        token,
-        httponly=True,       # Prevent JavaScript access (XSS protection)
-        secure=False,        # Set to True in production over HTTPS
-        samesite="Lax",      # CSRF protection
-        max_age=7200         # 2 hours (matches JWT expiry)
-    )
-
-    return response, 200
+    except Exception as e:
+        logger.error("Login error | email=%s | error=%s", email, e)
+        return jsonify({"success": False, "message": "Login failed. Please try again."}), 500
 
 
-# ===========================================================================
-# POST /api/auth/logout
-# ===========================================================================
 @auth_bp.route("/logout", methods=["POST"])
 @token_required
 def logout():
-    """
-    Logs out the authenticated user by clearing the auth_token cookie.
-    The cookie is overwritten with an empty value and max_age=0 to force expiry.
-    """
-    user = g.current_user
-    ip = request.remote_addr or "unknown"
+    current_user = g.current_user
+    client_ip = _get_client_ip()
 
-    log_event(user.get("email", "unknown"), "LOGOUT", ip)
-
-    response = make_response(jsonify({
-        "success": True,
-        "message": "Logged out successfully."
-    }))
-
-    # Clear the authentication cookie
-    response.set_cookie(
-        "auth_token",
-        "",
-        httponly=True,
-        secure=False,
-        samesite="Lax",
-        max_age=0           # Immediately expire the cookie
+    log_event(
+        current_user.get("email", "unknown"),
+        "LOGOUT",
+        client_ip,
+        user_agent=request.headers.get("User-Agent"),
     )
 
+    logger.info("User logged out | user_id=%s | ip=%s", current_user.get("id"), client_ip)
+
+    response = make_response(jsonify({"success": True, "message": "Logged out successfully."}))
+    _clear_auth_cookie(response)
     return response, 200
 
 
-# ===========================================================================
-# GET /api/auth/profile
-# ===========================================================================
 @auth_bp.route("/profile", methods=["GET"])
 @token_required
 def profile():
-    """
-    Returns the authenticated user's profile information.
-    Protected by JWT middleware — requires valid auth_token cookie.
-    """
-    user_payload = g.current_user
+    current_user = g.current_user
 
-    conn = get_connection()
-    user = conn.execute(
-        "SELECT id, username, email, role, created_at FROM users WHERE id = ?",
-        (user_payload["user_id"],)
-    ).fetchone()
-    conn.close()
+    try:
+        with get_db() as db:
+            user = db.execute(
+                """
+                SELECT id, username, email, role, is_active, last_login, created_at
+                FROM users
+                WHERE id = ?
+                """,
+                (current_user["user_id"],),
+            ).fetchone()
 
-    if not user:
-        return jsonify({"success": False, "message": "User not found."}), 404
+        if not user:
+            return jsonify({"success": False, "message": "User not found."}), 404
 
-    return jsonify({
-        "success": True,
-        "user": {
-            "id": user["id"],
-            "username": user["username"],
-            "email": user["email"],
-            "role": user["role"],
-            "created_at": user["created_at"]
-        }
-    }), 200
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": user["id"],
+                "username": user["username"],
+                "email": user["email"],
+                "role": user["role"],
+                "is_active": bool(user["is_active"]),
+                "last_login": user["last_login"],
+                "created_at": user["created_at"],
+            },
+        }), 200
+
+    except Exception as e:
+        logger.error("Profile fetch failed | user_id=%s | error=%s", current_user.get("user_id"), e)
+        return jsonify({"success": False, "message": "Failed to retrieve profile."}), 500
+
+
+@auth_bp.route("/profile", methods=["PATCH"])
+@token_required
+def update_profile():
+    current_user = g.current_user
+    payload = request.get_json(silent=True) or {}
+    client_ip = _get_client_ip()
+
+    username = payload.get("username", "").strip()
+    email = payload.get("email", "").strip().lower()
+
+    if username:
+        is_valid, error = validate_username(username)
+        if not is_valid:
+            return jsonify({"success": False, "message": error}), 422
+
+    if email:
+        is_valid, error = validate_email(email)
+        if not is_valid:
+            return jsonify({"success": False, "message": error}), 422
+
+    if not username and not email:
+        return jsonify({"success": False, "message": "Nothing to update."}), 400
+
+    try:
+        with get_db() as db:
+            if email:
+                existing = db.execute(
+                    "SELECT id FROM users WHERE email = ? AND id != ?",
+                    (email, current_user["user_id"]),
+                ).fetchone()
+                if existing:
+                    return jsonify({
+                        "success": False,
+                        "message": "This email is already in use.",
+                    }), 409
+
+            fields, params = [], []
+            if username:
+                fields.append("username = ?")
+                params.append(username)
+            if email:
+                fields.append("email = ?")
+                params.append(email)
+
+            fields.append("updated_at = datetime('now')")
+            params.append(current_user["user_id"])
+
+            db.execute(
+                f"UPDATE users SET {', '.join(fields)} WHERE id = ?",
+                params,
+            )
+
+        log_event(
+            current_user.get("email"),
+            "PROFILE_UPDATED",
+            client_ip,
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        logger.info("Profile updated | user_id=%s", current_user.get("user_id"))
+
+        return jsonify({"success": True, "message": "Profile updated successfully."}), 200
+
+    except Exception as e:
+        logger.error("Profile update failed | user_id=%s | error=%s", current_user.get("user_id"), e)
+        return jsonify({"success": False, "message": "Failed to update profile."}), 500
+
+
+@auth_bp.route("/change-password", methods=["POST"])
+@token_required
+@limiter.limit("5 per minute")
+def change_password():
+    current_user = g.current_user
+    payload = request.get_json(silent=True) or {}
+    client_ip = _get_client_ip()
+
+    current_password = payload.get("currentPassword", "")
+    new_password = payload.get("newPassword", "")
+    confirm_password = payload.get("confirmPassword", "")
+
+    if not all([current_password, new_password, confirm_password]):
+        return jsonify({"success": False, "message": "All password fields are required."}), 400
+
+    if new_password != confirm_password:
+        return jsonify({"success": False, "message": "New passwords do not match."}), 400
+
+    is_valid, error = validate_password(new_password)
+    if not is_valid:
+        return jsonify({"success": False, "message": error}), 422
+
+    try:
+        with get_db() as db:
+            user = db.execute(
+                "SELECT password FROM users WHERE id = ?",
+                (current_user["user_id"],),
+            ).fetchone()
+
+            if not user or not verify_password(current_password, user["password"]):
+                log_event(
+                    current_user.get("email"),
+                    "PASSWORD_CHANGE_FAILURE",
+                    client_ip,
+                    user_agent=request.headers.get("User-Agent"),
+                )
+                return jsonify({"success": False, "message": "Current password is incorrect."}), 401
+
+            new_hash = hash_password(new_password)
+            db.execute(
+                """
+                UPDATE users
+                SET password = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+                (new_hash, current_user["user_id"]),
+            )
+
+        log_event(
+            current_user.get("email"),
+            "PASSWORD_CHANGED",
+            client_ip,
+            user_agent=request.headers.get("User-Agent"),
+        )
+
+        logger.info("Password changed | user_id=%s | ip=%s", current_user.get("user_id"), client_ip)
+
+        return jsonify({"success": True, "message": "Password changed successfully."}), 200
+
+    except Exception as e:
+        logger.error("Password change failed | user_id=%s | error=%s", current_user.get("user_id"), e)
+        return jsonify({"success": False, "message": "Failed to change password."}), 500

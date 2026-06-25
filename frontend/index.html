@@ -2,21 +2,65 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="SecureAuthX — Enterprise Secure Authentication Platform" />
-    <title>SecureAuthX | Enterprise Auth Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Google Fonts -->
+    <meta
+      name="description"
+      content="SecureAuthenticationX — Enterprise-grade authentication platform with JWT, bcrypt, role-based access control, and real-time security monitoring."
+    />
+    <meta name="theme-color" content="#080c14" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+
+    <meta property="og:title" content="SecureAuthX | Enterprise Auth Platform" />
+    <meta
+      property="og:description"
+      content="Enterprise-grade authentication platform with JWT, bcrypt, role-based access control, and real-time security monitoring."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/og-preview.png" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap"
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=Sora:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;900&family=Sora:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+
+    <title>SecureAuthX | Enterprise Auth Platform</title>
   </head>
+
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          background: #080c14;
+          font-family: 'Orbitron', monospace;
+          color: #0ea5e9;
+          font-size: 13px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+        "
+      >
+        Initializing SecureAuthX…
+      </div>
+    </div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

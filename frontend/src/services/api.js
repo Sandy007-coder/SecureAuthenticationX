@@ -1,64 +1,104 @@
 import axios from 'axios';
 
-// ─── Axios Instance ───────────────────────────────────────────────────────────
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000',
-  withCredentials: true,           // Send HTTP-only cookies with every request
+  baseURL: API_BASE_URL,
+  withCredentials: true,
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
 });
 
-// ─── Request Interceptor ──────────────────────────────────────────────────────
-api.interceptors.request.use(
-  (config) => config,
-  (error) => Promise.reject(error)
-);
-
-// ─── Response Interceptor ─────────────────────────────────────────────────────
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // 401 Unauthorized → clear local session flag and redirect to login
-    if (error.response?.status === 401) {
-      sessionStorage.removeItem('user');
+    const status = error?.response?.status;
+
+    if (status === 401) {
+      if (!window.location.pathname.includes('/login')) {
+        window.location.href = '/login';
       }
+    }
+
     return Promise.reject(error);
   }
 );
 
-// ─── Auth Endpoints ───────────────────────────────────────────────────────────
-export const authApi = {
-  /**
-   * Register a new user.
-   * @param {{ username: string, email: string, password: string }} data
-   */
-  register: (data) => api.post('/api/auth/register', data),
-
-  /**
-   * Login with email and password.
-   * @param {{ email: string, password: string }} data
-   */
-  login: (data) => api.post('/api/auth/login', data),
-
-  /** Logout — clears HTTP-only cookie on the server. */
-  logout: () => api.post('/api/auth/logout'),
-
-  /** Fetch the authenticated user's profile. */
-  getProfile: () => api.get('/api/auth/profile'),
+const AUTH_ROUTES = {
+  REGISTER: '/api/auth/register',
+  LOGIN: '/api/auth/login',
+  LOGOUT: '/api/auth/logout',
+  PROFILE: '/api/auth/profile',
+  UPDATE_PROFILE: '/api/auth/profile',
+  CHANGE_PASSWORD: '/api/auth/change-password',
 };
 
-// ─── Admin Endpoints ──────────────────────────────────────────────────────────
+const ADMIN_ROUTES = {
+  STATS: '/api/admin/stats',
+  LOGS: '/api/admin/logs',
+  LOCKED_ACCOUNTS: '/api/admin/locked-accounts',
+  UNLOCK: (userId) => `/api/admin/unlock/${userId}`,
+  USERS: '/api/admin/users',
+  USER_ROLE: (userId) => `/api/admin/users/${userId}/role`,
+  USER_STATUS: (userId) => `/api/admin/users/${userId}/status`,
+};
+
+export const authApi = {
+  register(payload) {
+    return api.post(AUTH_ROUTES.REGISTER, payload);
+  },
+
+  login(credentials) {
+    return api.post(AUTH_ROUTES.LOGIN, credentials);
+  },
+
+  logout() {
+    return api.post(AUTH_ROUTES.LOGOUT);
+  },
+
+  getProfile() {
+    return api.get(AUTH_ROUTES.PROFILE);
+  },
+
+  updateProfile(payload) {
+    return api.patch(AUTH_ROUTES.UPDATE_PROFILE, payload);
+  },
+
+  changePassword(payload) {
+    return api.post(AUTH_ROUTES.CHANGE_PASSWORD, payload);
+  },
+};
+
 export const adminApi = {
-  /** Aggregate statistics (total users, failed logins, locked accounts). */
-  getStats: () => api.get('/api/admin/stats'),
+  getStats() {
+    return api.get(ADMIN_ROUTES.STATS);
+  },
 
-  /** Recent authentication / security event logs. */
-  getLogs: () => api.get('/api/admin/logs'),
+  getLogs(params = {}) {
+    return api.get(ADMIN_ROUTES.LOGS, { params });
+  },
 
-  /** Accounts that are currently locked out. */
-  getLockedAccounts: () => api.get('/api/admin/locked-accounts'),
+  getLockedAccounts() {
+    return api.get(ADMIN_ROUTES.LOCKED_ACCOUNTS);
+  },
+
+  unlockAccount(userId) {
+    return api.post(ADMIN_ROUTES.UNLOCK(userId));
+  },
+
+  listUsers() {
+    return api.get(ADMIN_ROUTES.USERS);
+  },
+
+  updateUserRole(userId, role) {
+    return api.patch(ADMIN_ROUTES.USER_ROLE(userId), { role });
+  },
+
+  updateUserStatus(userId, isActive) {
+    return api.patch(ADMIN_ROUTES.USER_STATUS(userId), { is_active: isActive });
+  },
 };
 
 export default api;

@@ -1,52 +1,100 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { Navigate, Route, Routes } from 'react-router-dom';
+
 import { authApi } from './services/api.js';
 
-import Login        from './pages/Login.jsx';
-import Register     from './pages/Register.jsx';
-import Dashboard    from './pages/Dashboard.jsx';
-import AdminPanel   from './pages/AdminPanel.jsx';
-import Profile      from './pages/Profile.jsx';
-import NotFound     from './pages/NotFound.jsx';
+import Login from './pages/Login.jsx';
+import Register from './pages/Register.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import AdminPanel from './pages/AdminPanel.jsx';
+import Profile from './pages/Profile.jsx';
+import SecuritySettings from './pages/SecuritySettings.jsx';
+import Alerts from './pages/Alerts.jsx';
+import AlertDetails from './pages/AlertDetails.jsx';
+import NotFound from './pages/NotFound.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import LoadingSpinner from './components/LoadingSpinner.jsx';
 
-// ─── Auth Context ─────────────────────────────────────────────────────────────
 const AuthContext = createContext(null);
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used inside AuthProvider.');
+  }
+  return context;
+};
 
-// ─── Auth Provider ────────────────────────────────────────────────────────────
 function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [authenticatedUser, setAuthenticatedUser] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
-  // Attempt to restore session from server on first mount
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+
+    const restoreSession = async () => {
       try {
-        const { data } = await authApi.getProfile();
-        setUser(data.user || data);
+        const response = await authApi.getProfile();
+        if (mounted) {
+          setAuthenticatedUser(response.data.user ?? null);
+        }
       } catch {
-        setUser(null);
+        if (mounted) {
+          setAuthenticatedUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setIsInitializing(false);
+        }
       }
-    })();
+    };
+
+    restoreSession();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = useCallback((userData) => {
-    setUser(userData);
+    setAuthenticatedUser(userData);
   }, []);
 
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
-    } catch { /* ignore */ }
-    setUser(null);
+    } catch {
+    } finally {
+      setAuthenticatedUser(null);
+    }
   }, []);
 
-  if (loading) {
+  const updateUser = useCallback((partialUpdate) => {
+    setAuthenticatedUser((current) =>
+      current ? { ...current, ...partialUpdate } : current
+    );
+  }, []);
+
+  const authContextValue = useMemo(
+    () => ({
+      user: authenticatedUser,
+      isAuthenticated: Boolean(authenticatedUser),
+      isLoading: isInitializing,
+      login,
+      logout,
+      updateUser,
+    }),
+    [authenticatedUser, isInitializing, login, logout, updateUser]
+  );
+
+  if (isInitializing) {
     return (
       <div className="flex h-screen items-center justify-center bg-cyber-bg">
         <LoadingSpinner size="lg" message="Authenticating…" />
@@ -55,35 +103,34 @@ function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={authContextValue}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        {/* Public routes */}
-        <Route path="/login"    element={<Login />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Protected routes — any authenticated user */}
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/profile"   element={<Profile />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/security-settings" element={<SecuritySettings />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/alerts/:id" element={<AlertDetails />} />
         </Route>
 
-        {/* Protected routes — admin only */}
         <Route element={<ProtectedRoute requireAdmin />}>
           <Route path="/admin" element={<AdminPanel />} />
         </Route>
 
-        {/* Redirects */}
-        <Route path="/"   element={<Navigate to="/dashboard" replace />} />
-        <Route path="*"   element={<NotFound />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
   );

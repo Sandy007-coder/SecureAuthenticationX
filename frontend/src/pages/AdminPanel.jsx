@@ -1,220 +1,339 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  Users, ShieldAlert, Lock, Activity,
-  AlertTriangle, RefreshCw, ChevronRight,
+  Activity,
+  AlertTriangle,
+  Lock,
+  RefreshCw,
+  ShieldAlert,
+  Unlock,
+  Users,
 } from 'lucide-react';
-import Navbar         from '../components/Navbar.jsx';
-import Sidebar        from '../components/Sidebar.jsx';
-import SecurityCard   from '../components/SecurityCard.jsx';
-import AlertBanner    from '../components/AlertBanner.jsx';
+
+import AlertBanner from '../components/AlertBanner.jsx';
 import LoadingSpinner from '../components/LoadingSpinner.jsx';
-import { adminApi }   from '../services/api.js';
+import Navbar from '../components/Navbar.jsx';
+import SecurityCard from '../components/SecurityCard.jsx';
+import Sidebar from '../components/Sidebar.jsx';
+import { adminApi } from '../services/api.js';
 
-// ─── Mock data ─────────────────────────────────────────────────────────────────
-const MOCK_STATS = { totalUsers: 142, failedLogins: 18, lockedAccounts: 3, activeSessions: 57 };
+const TABLE_HEADERS = ['Event', 'User', 'IP Address', 'Time', 'Severity'];
 
-const MOCK_LOGS = [
-  { id: 1, event: 'LOGIN_FAILED',   user: 'attacker@evil.io',  ip: '203.0.113.42',  time: '14:32:01', severity: 'high' },
-  { id: 2, event: 'ACCOUNT_LOCKED', user: 'bob@corp.io',       ip: '10.0.0.17',     time: '14:28:45', severity: 'medium' },
-  { id: 3, event: 'LOGIN_SUCCESS',  user: 'alice@corp.io',     ip: '192.168.1.42',  time: '14:15:22', severity: 'low' },
-  { id: 4, event: 'LOGIN_FAILED',   user: 'hacker@proxy.net',  ip: '198.51.100.7',  time: '13:55:10', severity: 'high' },
-  { id: 5, event: 'LOGOUT',         user: 'diana@corp.io',     ip: '172.16.0.88',   time: '13:40:33', severity: 'low' },
-  { id: 6, event: 'LOGIN_FAILED',   user: 'scan@botnet.ru',    ip: '198.51.100.99', time: '13:22:11', severity: 'critical' },
-];
+function resolveSeverity(eventType = '') {
+  const type = eventType.toUpperCase();
 
-const MOCK_LOCKED = [
-  { id: 1, username: 'bob@corp.io',        reason: 'Too many failed attempts', lockedAt: '2024-12-28 14:28:45' },
-  { id: 2, username: 'frank@corp.io',      reason: 'Suspicious IP activity',   lockedAt: '2024-12-28 12:10:00' },
-  { id: 3, username: 'grace@corp.io',      reason: 'Too many failed attempts', lockedAt: '2024-12-28 10:05:33' },
-];
+  if (type.includes('LOCKED') || type.includes('BREACH')) return 'critical';
+  if (type.includes('FAILURE') || type.includes('DENIED') || type.includes('INACTIVE')) return 'high';
+  if (type.includes('CHANGED') || type.includes('UPDATED') || type.includes('ROLE')) return 'medium';
+  return 'low';
+}
 
-const SEVERITY_BADGE = {
+const SEVERITY_STYLES = {
   critical: 'badge-red',
-  high:     'badge-red',
-  medium:   'badge-yellow',
-  low:      'badge-blue',
+  high: 'badge-red',
+  medium: 'badge-yellow',
+  low: 'badge-blue',
 };
 
-export default function AdminPanel() {
-  const [sidebarOpen, setSidebar] = useState(false);
-  const [stats, setStats]         = useState(null);
-  const [logs, setLogs]           = useState([]);
-  const [locked, setLocked]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+function formatTime(timestamp) {
+  if (!timestamp) return '—';
+  const parts = timestamp.split(' ');
+  return parts.length > 1 ? parts[1] : timestamp;
+}
 
-  const fetchData = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+export default function AdminPanel() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [securityLogs, setSecurityLogs] = useState([]);
+  const [lockedAccounts, setLockedAccounts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [unlockingId, setUnlockingId] = useState(null);
+  const [actionMessage, setActionMessage] = useState('');
+
+  const loadDashboardData = useCallback(async (refresh = false) => {
+    if (refresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setLoadError('');
+
     try {
-      const [statsRes, logsRes, lockedRes] = await Promise.allSettled([
+      const [statsResult, logsResult, lockedResult] = await Promise.allSettled([
         adminApi.getStats(),
-        adminApi.getLogs(),
+        adminApi.getLogs({ limit: 10 }),
         adminApi.getLockedAccounts(),
       ]);
-      setStats(statsRes.status === 'fulfilled'  ? statsRes.value.data  : MOCK_STATS);
-      setLogs(logsRes.status === 'fulfilled'    ? (logsRes.value.data.logs || logsRes.value.data) : MOCK_LOGS);
-      setLocked(lockedRes.status === 'fulfilled'? (lockedRes.value.data.accounts || lockedRes.value.data) : MOCK_LOCKED);
+
+      if (statsResult.status === 'fulfilled') {
+        setStats(statsResult.value.data.stats);
+      } else {
+        setLoadError('Some dashboard data could not be loaded.');
+      }
+
+      setSecurityLogs(
+        logsResult.status === 'fulfilled' ? logsResult.value.data.logs ?? [] : []
+      );
+
+      setLockedAccounts(
+        lockedResult.status === 'fulfilled'
+          ? lockedResult.value.data.locked_accounts ?? []
+          : []
+      );
     } catch {
-      setStats(MOCK_STATS);
-      setLogs(MOCK_LOGS);
-      setLocked(MOCK_LOCKED);
+      setLoadError('Failed to load admin dashboard data. Please try again.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  const handleUnlock = async (userId, email) => {
+    setUnlockingId(userId);
+    setActionMessage('');
+
+    try {
+      await adminApi.unlockAccount(userId);
+      setActionMessage(`Account for ${email} has been unlocked.`);
+      setLockedAccounts((prev) => prev.filter((acc) => acc.id !== userId));
+      // Refresh stats so the "locked accounts" count updates
+      loadDashboardData(true);
+    } catch {
+      setActionMessage(`Failed to unlock account for ${email}.`);
+    } finally {
+      setUnlockingId(null);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const criticalCount = securityLogs.filter(
+    (entry) => resolveSeverity(entry.event_type) === 'critical'
+  ).length;
 
   return (
-    <div className="flex h-screen bg-cyber-bg overflow-hidden">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebar(false)} />
+    <div className="flex h-screen overflow-hidden bg-cyber-bg">
+      <Sidebar open={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Navbar onMenuToggle={() => setSidebar((v) => !v)} sidebarOpen={sidebarOpen} />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Navbar
+          sidebarOpen={isSidebarOpen}
+          onMenuToggle={() => setIsSidebarOpen((current) => !current)}
+        />
 
-        <main className="flex-1 overflow-y-auto px-4 py-6 lg:px-8 space-y-6 animate-fade-in">
-
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <main className="flex-1 space-y-6 overflow-y-auto px-4 py-6 lg:px-8 animate-fade-in">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="font-display text-xl font-bold text-cyber-bright">
                 Admin <span className="neon-text">Control Panel</span>
               </h1>
-              <p className="text-cyber-muted text-sm mt-0.5 font-mono-code">
+              <p className="mt-0.5 font-mono-code text-sm text-cyber-muted">
                 System-wide security analytics and management
               </p>
             </div>
+
             <button
-              onClick={() => fetchData(true)}
-              disabled={refreshing}
-              className="btn-cyber gap-2 text-xs py-2"
+              type="button"
+              disabled={isRefreshing}
+              onClick={() => loadDashboardData(true)}
+              className="btn-cyber gap-2 py-2 text-xs"
             >
-              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
               Refresh
             </button>
           </div>
 
-          {/* Top alert */}
-          <AlertBanner
-            type="danger"
-            title="6 High-Severity Events in the Last Hour"
-            message="Immediate review recommended. Multiple brute-force attempts detected from external IPs."
-          />
+          {loadError && (
+            <AlertBanner type="danger" title="Data Load Error" message={loadError} />
+          )}
 
-          {/* Stats cards */}
-          {loading ? (
+          {actionMessage && (
+            <AlertBanner type="info" title="Action Result" message={actionMessage} autoDismiss />
+          )}
+
+          {!isLoading && criticalCount > 0 && (
+            <AlertBanner
+              type="danger"
+              title={`${criticalCount} Critical Event${criticalCount > 1 ? 's' : ''} Detected`}
+              message="Review the security event log below for account lockouts and breach indicators."
+            />
+          )}
+
+          {isLoading ? (
             <div className="flex justify-center py-16">
               <LoadingSpinner message="Loading admin data…" />
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <SecurityCard
                 icon={<Users size={20} />}
                 label="Total Users"
-                value={stats?.totalUsers ?? '—'}
-                sub="Registered accounts"
+                value={stats?.users?.total ?? '—'}
+                sub={`${stats?.users?.active ?? 0} active`}
                 accent="blue"
               />
+
               <SecurityCard
                 icon={<ShieldAlert size={20} />}
-                label="Failed Logins"
-                value={stats?.failedLogins ?? '—'}
-                sub="Last 24 hours"
+                label="Failed Attempts"
+                value={stats?.users?.total_failed_attempts ?? '—'}
+                sub="Across all accounts"
                 accent="red"
-                trend="↑ 23%"
-                trendUp={false}
               />
+
               <SecurityCard
                 icon={<Lock size={20} />}
                 label="Locked Accounts"
-                value={stats?.lockedAccounts ?? '—'}
+                value={stats?.users?.locked ?? '—'}
                 sub="Pending review"
                 accent="yellow"
               />
+
               <SecurityCard
                 icon={<Activity size={20} />}
-                label="Active Sessions"
-                value={stats?.activeSessions ?? '—'}
-                sub="Currently authenticated"
+                label="Events (24h)"
+                value={stats?.logs?.last_24h ?? '—'}
+                sub={`${stats?.logs?.total ?? 0} total logged`}
                 accent="green"
               />
             </div>
           )}
 
-          {/* Two-column layout: logs + locked */}
-          {!loading && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-
-              {/* Security Event Logs — 2/3 width */}
-              <div className="xl:col-span-2 glass-card border border-cyber-border/60 p-6">
-                <div className="flex items-center gap-2 mb-5">
+          {!isLoading && (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+              <section className="glass-card border border-cyber-border/60 p-6 xl:col-span-2">
+                <div className="mb-5 flex items-center gap-2">
                   <AlertTriangle size={18} className="text-cyber-red" />
-                  <h2 className="text-base font-semibold text-cyber-bright">Security Event Logs</h2>
-                  <span className="ml-auto badge-red font-mono-code text-xs">
-                    {logs.filter((l) => l.severity === 'high' || l.severity === 'critical').length} critical
+                  <h2 className="text-base font-semibold text-cyber-bright">
+                    Recent Security Events
+                  </h2>
+                  <span className="badge-red ml-auto font-mono-code text-xs">
+                    {criticalCount} critical
                   </span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-cyber-border/50">
-                        {['Event', 'User', 'IP', 'Time', 'Severity'].map((h) => (
-                          <th key={h} className="pb-3 pr-4 text-left text-xs font-semibold text-cyber-muted tracking-widest uppercase font-mono-code">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-cyber-border/30">
-                      {logs.map((log) => (
-                        <tr key={log.id} className="hover:bg-cyber-blue/5 transition-colors">
-                          <td className="py-3 pr-4 font-mono-code text-xs text-cyber-accent">{log.event}</td>
-                          <td className="py-3 pr-4 text-cyber-text text-xs max-w-[140px] truncate">{log.user}</td>
-                          <td className="py-3 pr-4 font-mono-code text-cyber-blue text-xs">{log.ip}</td>
-                          <td className="py-3 pr-4 text-cyber-muted text-xs font-mono-code">{log.time}</td>
-                          <td className="py-3">
-                            <span className={SEVERITY_BADGE[log.severity] || 'badge-blue'}>
-                              {log.severity}
-                            </span>
-                          </td>
+                {securityLogs.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-cyber-muted">
+                    No security events recorded yet.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-cyber-border/50">
+                          {TABLE_HEADERS.map((header) => (
+                            <th
+                              key={header}
+                              className="pb-3 pr-4 text-left font-mono-code text-xs font-semibold uppercase tracking-widest text-cyber-muted"
+                            >
+                              {header}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                      </thead>
 
-              {/* Locked Accounts — 1/3 width */}
-              <div className="glass-card border border-cyber-yellow/30 p-6">
-                <div className="flex items-center gap-2 mb-5">
+                      <tbody className="divide-y divide-cyber-border/30">
+                        {securityLogs.map((entry) => {
+                          const severity = resolveSeverity(entry.event_type);
+                          return (
+                            <tr key={entry.id} className="transition-colors hover:bg-cyber-blue/5">
+                              <td className="py-3 pr-4 font-mono-code text-xs text-cyber-accent">
+                                {entry.event_type}
+                              </td>
+
+                              <td className="max-w-[160px] truncate py-3 pr-4 text-xs text-cyber-text">
+                                {entry.username || entry.email}
+                              </td>
+
+                              <td className="py-3 pr-4 font-mono-code text-xs text-cyber-blue">
+                                {entry.ip_address}
+                              </td>
+
+                              <td className="py-3 pr-4 font-mono-code text-xs text-cyber-muted">
+                                {formatTime(entry.timestamp)}
+                              </td>
+
+                              <td className="py-3">
+                                <span className={SEVERITY_STYLES[severity]}>
+                                  {severity}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="glass-card border border-cyber-yellow/30 p-6">
+                <div className="mb-5 flex items-center gap-2">
                   <Lock size={18} className="text-cyber-yellow" />
-                  <h2 className="text-base font-semibold text-cyber-bright">Locked Accounts</h2>
+                  <h2 className="text-base font-semibold text-cyber-bright">
+                    Locked Accounts
+                  </h2>
+                  <span className="badge-yellow ml-auto font-mono-code text-xs">
+                    {lockedAccounts.length}
+                  </span>
                 </div>
 
-                {locked.length === 0 ? (
-                  <p className="text-center text-cyber-muted text-sm py-8">No locked accounts.</p>
+                {lockedAccounts.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-cyber-muted">
+                    No locked accounts.
+                  </p>
                 ) : (
                   <div className="space-y-3">
-                    {locked.map((acc) => (
+                    {lockedAccounts.map((account) => (
                       <div
-                        key={acc.id}
-                        className="rounded-lg border border-cyber-border/50 bg-cyber-surface/60 px-4 py-3
-                                   hover:border-cyber-yellow/40 transition-colors"
+                        key={account.id}
+                        className="
+                          rounded-lg border border-cyber-border/50
+                          bg-cyber-surface/60 px-4 py-3
+                          transition-colors hover:border-cyber-yellow/40
+                        "
                       >
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-cyber-bright text-sm font-medium truncate">{acc.username}</p>
-                          <ChevronRight size={14} className="text-cyber-muted flex-shrink-0" />
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <p className="truncate text-sm font-medium text-cyber-bright">
+                            {account.username}
+                          </p>
+
+                          <button
+                            type="button"
+                            disabled={unlockingId === account.id}
+                            onClick={() => handleUnlock(account.id, account.email)}
+                            className="
+                              flex flex-shrink-0 items-center gap-1
+                              rounded-md border border-cyber-green/40
+                              px-2 py-1 text-xs text-cyber-green
+                              transition-colors hover:bg-cyber-green/10
+                              disabled:opacity-50
+                            "
+                          >
+                            <Unlock size={12} className={unlockingId === account.id ? 'animate-pulse' : ''} />
+                            Unlock
+                          </button>
                         </div>
-                        <p className="text-cyber-muted text-xs">{acc.reason}</p>
-                        <p className="text-cyber-muted text-xs font-mono-code mt-1">{acc.lockedAt}</p>
+
+                        <p className="truncate text-xs text-cyber-muted">
+                          {account.email}
+                        </p>
+
+                        <p className="mt-1 text-xs text-cyber-muted">
+                          {account.failed_attempts} failed attempts
+                        </p>
+
+                        <p className="mt-1 font-mono-code text-xs text-cyber-muted">
+                          Locked until {account.lock_until}
+                        </p>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
+              </section>
             </div>
           )}
         </main>
