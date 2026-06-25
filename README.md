@@ -402,10 +402,10 @@ npm run dev
 ## 👨‍💻 Author
 
 **Sarveswaran S**  
-Final Year Cybersecurity Project  
-B.E. / B.Tech — Computer Science & Engineering (Cybersecurity)
-🔐 Cybersecurity, Python & Data Analytics Enthusiast
-🎯 Interested in Penetration Testing, Red Teaming, and Data Analysis
+
+* B.Tech — Computer Science & Engineering (Cybersecurity)
+* 🔐 Cybersecurity, Python & Data Analytics Enthusiast
+* 🎯 Interested in Penetration Testing, Red Teaming, and Data Analysis
 
 🔗 GitHub: https://github.com/Sandy007-coder
 
