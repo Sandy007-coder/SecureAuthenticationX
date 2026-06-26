@@ -6,7 +6,7 @@ DB_PATH = Path(__file__).resolve().parent / 'app' / 'database' / 'database.db'
 
 ADMIN_EMAIL    = 'YourEmailHere' # Change Email each time 
 ADMIN_USERNAME = 'Sarveswaran'
-ADMIN_PASSWORD = 'YourPasswordHere'  # Change this each time 
+ADMIN_PASSWORD = 'YourPasswordHere'  # Change Password each time 
 
 def seed_admin() -> None:
     if not DB_PATH.exists():
