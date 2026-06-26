@@ -4,7 +4,7 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / 'app' / 'database' / 'database.db'
 
-ADMIN_EMAIL    = 'sarveswarans620@gmail.com'
+ADMIN_EMAIL    = 'YourEmailHere' # Change Email each time 
 ADMIN_USERNAME = 'Sarveswaran'
 ADMIN_PASSWORD = 'YourPasswordHere'  # Change this each time 
 
