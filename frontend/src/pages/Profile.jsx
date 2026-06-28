@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   User,
@@ -27,11 +27,11 @@ import { useAuth } from '../App.jsx';
 import { authApi } from '../services/api.js';
 
 const INITIAL_SECURITY_FEATURES = [
-  { key: 'mfa', label: '2-Factor Authentication', enabled: true, toggleable: true },
-  { key: 'httpOnly', label: 'HTTP-Only Cookie Auth', enabled: true, toggleable: false },
-  { key: 'sessionEncryption', label: 'Session Encryption', enabled: true, toggleable: false },
-  { key: 'ipAllowlist', label: 'IP Allowlisting', enabled: false, toggleable: true },
-  { key: 'loginAlerts', label: 'Suspicious Login Alerts', enabled: true, toggleable: true },
+  { key: 'mfa',               label: '2-Factor Authentication',   enabled: true,  toggleable: true  },
+  { key: 'httpOnly',          label: 'HTTP-Only Cookie Auth',      enabled: true,  toggleable: false },
+  { key: 'sessionEncryption', label: 'Session Encryption',         enabled: true,  toggleable: false },
+  { key: 'ipAllowlist',       label: 'IP Allowlisting',            enabled: false, toggleable: true  },
+  { key: 'loginAlerts',       label: 'Suspicious Login Alerts',    enabled: true,  toggleable: true  },
 ];
 
 function validate(fields) {
@@ -45,9 +45,16 @@ function validate(fields) {
 
 function validatePassword(fields) {
   const errors = {};
-  if (!fields.currentPassword) errors.currentPassword = 'Current password is required.';
+  if (!fields.currentPassword)
+    errors.currentPassword = 'Current password is required.';
   if (!fields.newPassword || fields.newPassword.length < 8)
     errors.newPassword = 'New password must be at least 8 characters.';
+  if (!/[A-Z]/.test(fields.newPassword))
+    errors.newPassword = 'Must contain at least one uppercase letter.';
+  if (!/\d/.test(fields.newPassword))
+    errors.newPassword = 'Must contain at least one digit.';
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(fields.newPassword))
+    errors.newPassword = 'Must contain at least one special character.';
   if (fields.newPassword !== fields.confirmPassword)
     errors.confirmPassword = 'Passwords do not match.';
   return errors;
@@ -55,7 +62,7 @@ function validatePassword(fields) {
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user: authenticatedUser } = useAuth();
+  const { user: authenticatedUser, updateUser } = useAuth();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -105,7 +112,6 @@ export default function Profile() {
 
   const user = profile || authenticatedUser || {};
 
-  // Populate edit fields when profile loads
   useEffect(() => {
     if (user.username || user.email) {
       setEditFields({ username: user.username || '', email: user.email || '' });
@@ -131,16 +137,37 @@ export default function Profile() {
       setEditErrors(errors);
       return;
     }
+
     setIsSaving(true);
     setSaveError('');
     setSaveSuccess('');
+
     try {
-      await new Promise((res) => setTimeout(res, 800)); 
+      await authApi.updateProfile({
+        username: editFields.username.trim(),
+        email: editFields.email.trim().toLowerCase(),
+      });
+
       setProfile((prev) => ({ ...prev, ...editFields }));
+
+      if (updateUser) {
+        updateUser({ username: editFields.username, email: editFields.email });
+      }
+
       setSaveSuccess('Profile updated successfully.');
       setIsEditing(false);
-    } catch {
-      setSaveError('Failed to update profile. Please try again.');
+
+    } catch (error) {
+      const message = error?.response?.data?.message;
+      const status  = error?.response?.status;
+
+      if (status === 409) {
+        setSaveError('This email is already in use by another account.');
+      } else if (status === 422) {
+        setSaveError(message || 'Invalid input. Please check your details.');
+      } else {
+        setSaveError(message || 'Failed to update profile. Please try again.');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -152,16 +179,33 @@ export default function Profile() {
       setPasswordErrors(errors);
       return;
     }
+
     setIsSavingPassword(true);
     setPasswordError('');
     setPasswordSuccess('');
+
     try {
-      await new Promise((res) => setTimeout(res, 800));
+      await authApi.changePassword({
+        currentPassword: passwordFields.currentPassword,
+        newPassword:     passwordFields.newPassword,
+        confirmPassword: passwordFields.confirmPassword,
+      });
+
       setPasswordSuccess('Password changed successfully.');
       setPasswordFields({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setShowPasswordForm(false);
-    } catch {
-      setPasswordError('Failed to change password. Check your current password.');
+
+    } catch (error) {
+      const message = error?.response?.data?.message;
+      const status  = error?.response?.status;
+
+      if (status === 401) {
+        setPasswordError('Current password is incorrect.');
+      } else if (status === 422) {
+        setPasswordError(message || 'New password does not meet requirements.');
+      } else {
+        setPasswordError(message || 'Failed to change password. Please try again.');
+      }
     } finally {
       setIsSavingPassword(false);
     }
@@ -176,22 +220,22 @@ export default function Profile() {
   };
 
   const profileDetails = useMemo(() => [
-    { icon: <User size={15} />, label: 'Username', value: user.username || '—' },
-    { icon: <Mail size={15} />, label: 'Email', value: user.email || '—' },
-    { icon: <Shield size={15} />, label: 'Role', value: user.role || 'user' },
+    { icon: <User size={15} />,     label: 'Username', value: user.username || '—' },
+    { icon: <Mail size={15} />,     label: 'Email',    value: user.email    || '—' },
+    { icon: <Shield size={15} />,   label: 'Role',     value: user.role     || 'user' },
     {
       icon: <Calendar size={15} />,
       label: 'Joined',
-      value: user.createdAt
-        ? new Date(user.createdAt).toLocaleDateString('en-GB', { dateStyle: 'medium' })
+      value: user.created_at
+        ? new Date(user.created_at).toLocaleDateString('en-GB', { dateStyle: 'medium' })
         : '—',
     },
     { icon: <Key size={15} />, label: 'User ID', value: user._id || user.id || '—' },
   ], [user]);
 
-  const initials = user.username?.slice(0, 2).toUpperCase() || 'SX';
-  const role = user.role || 'user';
-  const isAdmin = role === 'admin';
+  const initials   = user.username?.slice(0, 2).toUpperCase() || 'SX';
+  const role       = user.role || 'user';
+  const isAdmin    = role === 'admin';
   const mfaEnabled = securityFeatures.find((f) => f.key === 'mfa')?.enabled;
 
   return (
@@ -215,16 +259,16 @@ export default function Profile() {
           </header>
 
           {saveSuccess && (
-            <AlertBanner type="success" title="Saved" message={saveSuccess} />
+            <AlertBanner type="success" title="Saved" message={saveSuccess} autoDismiss />
           )}
           {saveError && (
-            <AlertBanner type="error" title="Error" message={saveError} />
+            <AlertBanner type="danger" title="Error" message={saveError} />
           )}
           {passwordSuccess && (
-            <AlertBanner type="success" title="Password Changed" message={passwordSuccess} />
+            <AlertBanner type="success" title="Password Changed" message={passwordSuccess} autoDismiss />
           )}
           {passwordError && (
-            <AlertBanner type="error" title="Error" message={passwordError} />
+            <AlertBanner type="danger" title="Error" message={passwordError} />
           )}
 
           {isLoading ? (
@@ -265,10 +309,7 @@ export default function Profile() {
                     <p className="mt-0.5 text-xs text-cyber-muted">All systems operational</p>
                   </div>
 
-                  <button
-                    onClick={handleStartEdit}
-                    className="btn-cyber w-full gap-2 py-2 text-xs"
-                  >
+                  <button onClick={handleStartEdit} className="btn-cyber w-full gap-2 py-2 text-xs">
                     <Edit3 size={13} />
                     Edit Profile
                   </button>
@@ -436,8 +477,8 @@ export default function Profile() {
                   <div className="grid gap-5 sm:grid-cols-3">
                     {[
                       { field: 'currentPassword', label: 'Current Password', showKey: 'current' },
-                      { field: 'newPassword', label: 'New Password', showKey: 'new' },
-                      { field: 'confirmPassword', label: 'Confirm New Password', showKey: 'confirm' },
+                      { field: 'newPassword',     label: 'New Password',     showKey: 'new'     },
+                      { field: 'confirmPassword', label: 'Confirm Password', showKey: 'confirm' },
                     ].map(({ field, label, showKey }) => (
                       <div key={field}>
                         <label className="mb-1 block text-xs font-medium uppercase tracking-widest text-cyber-muted">
@@ -473,6 +514,10 @@ export default function Profile() {
                       </div>
                     ))}
                   </div>
+
+                  <p className="mt-3 text-xs text-cyber-muted">
+                    Password must be 8+ characters with uppercase, a digit, and a special character.
+                  </p>
 
                   <div className="mt-5 flex gap-3">
                     <button

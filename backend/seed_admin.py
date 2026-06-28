@@ -4,9 +4,9 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / 'app' / 'database' / 'database.db'
 
-ADMIN_EMAIL    = 'YourEmailHere' # Change Email each time 
+ADMIN_EMAIL    = 'sarveswarans620@gmail.com' # Change Email each time 
 ADMIN_USERNAME = 'Sarveswaran'
-ADMIN_PASSWORD = 'YourPasswordHere'  # Change Password each time 
+ADMIN_PASSWORD = 'Sarveswaran9361@'  # Change Password each time 
 
 def seed_admin() -> None:
     if not DB_PATH.exists():
